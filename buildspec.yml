@@ -1,0 +1,37 @@
+version: 0.2
+
+# This variables can (should) be defined in codebuild directly. 
+# Remove the default values and set them in the CodeBuild project configuration for better security and flexibility. Do not hardcode sensitive information in the buildspec.yml file.
+# env:
+#   variables:
+#     # ECR repository name and target Lambda function name.
+#     IMAGE_REPO_NAME: python-lambda-template
+#     # Image tag to publish and deploy (for example: latest, v1.2.3, commit SHA).
+#     IMAGE_TAG: latest
+#     LAMBDA_FUNCTION_NAME: python-lambda-template
+#     # AWS region where the ECR registry and Lambda function are deployed.
+#     AWS_REGION: <region>
+#     # AWS account ID used to construct the ECR registry URL.
+#     ACCOUNT_ID: <account_id>
+
+phases:
+  pre_build:
+    commands:
+      # Authenticate Docker to the ECR registry so images can be pushed.
+      - aws ecr get-login-password --region $AWS_REGION | \
+        docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+  build:
+    commands:
+      # Build the Lambda container image from the Dockerfile in the project root.
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      # Tag the local image with the fully qualified ECR repository URI.
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG \
+        $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+  post_build:
+    commands:
+      # Push the tagged image to ECR.
+      - docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      # Update the Lambda function to use the newly pushed container image.
+      - aws lambda update-function-code \
+          --function-name $LAMBDA_FUNCTION_NAME \
+          --image-uri $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
